@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Busca automáticamente vacantes donde puedas postular según tus habilidades. Ideal para Ingenieros de Software y áreas afines.">
+  <title>🔍 Agenda de Postulaciones | Búsqueda Automática</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- Floating Particles -->
+  <div class="particles" id="particles"></div>
+
+  <div class="app">
+    <!-- Header -->
+    <header class="header">
+      <span class="header__icon">🔍</span>
+      <h1 class="header__title">Agenda de Postulaciones</h1>
+      <p class="header__subtitle">Búsqueda automática de vacantes por tus habilidades. No importa el nombre del puesto, si cumples los requisitos, ¡te lo mostramos!</p>
+    </header>
+
+    <!-- API Key Warning -->
+    <div class="api-warning" id="api-warning" style="display: none;">
+      <div class="api-warning__icon">⚠️</div>
+      <div class="api-warning__content">
+        <h3>API Key no configurada</h3>
+        <p>Para buscar vacantes automáticamente necesitas una API Key gratuita de RapidAPI.</p>
+        <ol>
+          <li>Crea una cuenta gratis en <a href="https://rapidapi.com" target="_blank">rapidapi.com</a></li>
+          <li>Suscríbete al plan Basic (gratis) de <a href="https://rapidapi.com/letscrape-6bRBa3QguO5/api/jsearch" target="_blank">JSearch API</a></li>
+          <li>Copia tu API Key</li>
+          <li>Pégala en el archivo <code>.env</code> → <code>RAPIDAPI_KEY=tu_key</code></li>
+          <li>Reinicia el servidor</li>
+        </ol>
+      </div>
+    </div>
+
+    <!-- Stats Dashboard -->
+    <section class="stats" id="stats-dashboard">
+      <div class="stat-card stat-card--total">
+        <div class="stat-card__icon">📊</div>
+        <div class="stat-card__value" id="stat-total">0</div>
+        <div class="stat-card__label">Total Vacantes</div>
+      </div>
+      <div class="stat-card stat-card--pending">
+        <div class="stat-card__icon">🟢</div>
+        <div class="stat-card__value" id="stat-pending">0</div>
+        <div class="stat-card__label">Pendientes</div>
+      </div>
+      <div class="stat-card stat-card--applied">
+        <div class="stat-card__icon">🔴</div>
+        <div class="stat-card__value" id="stat-applied">0</div>
+        <div class="stat-card__label">Postulado</div>
+      </div>
+      <div class="stat-card stat-card--rate">
+        <div class="stat-card__icon">📈</div>
+        <div class="stat-card__value" id="stat-rate">0%</div>
+        <div class="stat-card__label">Progreso</div>
+      </div>
+    </section>
+
+    <!-- Profile / My Skills -->
+    <section class="profile-section" id="profile-section">
+      <div class="profile-section__header">
+        <div class="profile-section__title">🎯 Mis Habilidades (se buscan vacantes que pidan estas skills)</div>
+        <button class="btn btn--ghost btn--sm" id="btn-edit-skills" onclick="openSkillsEditor()">✏️ Editar</button>
+      </div>
+      <div class="profile-skills" id="my-skills-list"></div>
+    </section>
+
+    <!-- Search Section -->
+    <section class="search-section">
+      <div class="search-section__header">
+        <h2 class="search-section__title">🚀 Búsqueda Automática</h2>
+        <span class="search-section__last" id="last-search-time"></span>
+      </div>
+      <div class="search-section__controls">
+        <div class="search-box search-box--large">
+          <span class="search-box__icon">🔍</span>
+          <input type="text" class="search-box__input" id="custom-search-input"
+            placeholder="Buscar algo específico (opcional): ej. 'data analyst', 'practicante QA'...">
+        </div>
+        <div class="search-section__location">
+          <span class="search-box__icon" style="position:static;">📍</span>
+          <input type="text" class="search-box__input" id="location-input"
+            value="Lima, Peru" placeholder="Ciudad, País" style="padding-left:16px;">
+        </div>
+        <button class="btn btn--primary btn--large" id="btn-search" onclick="startSearch()">
+          <span id="search-btn-text">🔍 Buscar Vacantes</span>
+        </button>
+      </div>
+      <div class="search-section__info" id="search-info" style="display: none;"></div>
+    </section>
+
+    <!-- Loading Overlay -->
+    <div class="loading-overlay" id="loading-overlay" style="display: none;">
+      <div class="loading-spinner">
+        <div class="spinner"></div>
+        <div class="loading-text" id="loading-text">Buscando vacantes...</div>
+        <div class="loading-subtext" id="loading-subtext">Analizando múltiples portales de empleo</div>
+        <div class="loading-progress" id="loading-progress"></div>
+      </div>
+    </div>
+
+    <!-- Controls -->
+    <div class="controls">
+      <div class="search-box">
+        <span class="search-box__icon">🔎</span>
+        <input type="text" class="search-box__input" id="filter-input"
+          placeholder="Filtrar vacantes guardadas por empresa, puesto, habilidad...">
+      </div>
+      <div class="filter-group">
+        <button class="filter-btn filter-btn--active" data-filter="all" onclick="setFilter('all', this)">📋 Todas</button>
+        <button class="filter-btn filter-btn--green" data-filter="pending" onclick="setFilter('pending', this)">🟢 Pendientes</button>
+        <button class="filter-btn filter-btn--red" data-filter="applied" onclick="setFilter('applied', this)">🔴 Postulado</button>
+      </div>
+
+      <div class="experience-filter" style="display: flex; gap: 8px; align-items: center; margin-left: auto;">
+        <select id="exp-select" onchange="toggleExpRange()" class="form-group__select" style="width: 150px; padding: 6px 12px; height: 36px;">
+          <option value="all">Experiencia: Todas</option>
+          <option value="none">Sin Experiencia (Trainee)</option>
+          <option value="some">Con Experiencia</option>
+        </select>
+        <div id="exp-range-container" style="display: none; align-items: center; gap: 5px;">
+          <input type="number" id="exp-min" placeholder="Min" style="width: 60px; padding: 6px; height: 36px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--text-primary);" min="0" step="0.5">
+          <span style="color: var(--text-secondary)">-</span>
+          <input type="number" id="exp-max" placeholder="Max" style="width: 60px; padding: 6px; height: 36px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--text-primary);" min="0" step="0.5">
+          <button class="btn btn--primary btn--sm" onclick="applyExpFilter()">✓</button>
+        </div>
+      </div>
+
+      <button class="btn btn--primary btn--sm" onclick="openAddModal()">➕ Manual</button>
+      <button class="btn btn--ghost btn--sm" onclick="confirmReset()">🗑️ Limpiar Todo</button>
+    </div>
+
+    <!-- Skills Filter Bar -->
+    <div class="skills-bar" id="skills-filter-bar">
+      <span class="skills-bar__label">🏷️ Filtrar por skill:</span>
+    </div>
+
+    <!-- Vacancies Grid -->
+    <div class="vacancies-grid" id="vacancies-grid"></div>
+  </div>
+
+  <!-- Add/Edit Modal -->
+  <div class="modal-overlay" id="modal-overlay">
+    <div class="modal">
+      <button class="modal__close" onclick="closeModal()">✕</button>
+      <h2 class="modal__title" id="modal-title">➕ Nueva Vacante</h2>
+      <form id="vacancy-form" onsubmit="handleFormSubmit(event)">
+        <input type="hidden" id="form-id">
+        <div class="form-group">
+          <label class="form-group__label" for="form-company">Empresa *</label>
+          <input type="text" class="form-group__input" id="form-company" placeholder="Ej: Saga Falabella, BCP..." required>
+        </div>
+        <div class="form-group">
+          <label class="form-group__label" for="form-title">Título del Puesto *</label>
+          <input type="text" class="form-group__input" id="form-title" placeholder="Ej: Practicante BI Pre Profesional" required>
+        </div>
+        <div class="form-group">
+          <label class="form-group__label" for="form-area">Área / Departamento</label>
+          <select class="form-group__select" id="form-area">
+            <option value="Tecnología / TI">Tecnología / TI</option>
+            <option value="Business Intelligence">Business Intelligence</option>
+            <option value="Data Analytics">Data Analytics</option>
+            <option value="Data Science">Data Science</option>
+            <option value="Desarrollo de Software">Desarrollo de Software</option>
+            <option value="QA / Testing">QA / Testing</option>
+            <option value="DevOps / Cloud">DevOps / Cloud</option>
+            <option value="Ciberseguridad">Ciberseguridad</option>
+            <option value="Producto Digital">Producto Digital</option>
+            <option value="UX / UI">UX / UI</option>
+            <option value="Soporte Técnico">Soporte Técnico</option>
+            <option value="Consultoría">Consultoría</option>
+            <option value="Transformación Digital">Transformación Digital</option>
+            <option value="Otras áreas">Otras áreas</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-group__label" for="form-description">Descripción / Requisitos</label>
+          <textarea class="form-group__textarea" id="form-description" placeholder="Describe los requisitos, funciones y detalles del puesto..."></textarea>
+        </div>
+        <div class="form-group">
+          <label class="form-group__label" for="form-skills">Habilidades requeridas</label>
+          <input type="text" class="form-group__input" id="form-skills" placeholder="SQL, Excel, Python, Power BI... (separadas por coma)">
+          <span class="form-group__help">Separa cada habilidad con una coma</span>
+        </div>
+        <div class="form-group">
+          <label class="form-group__label" for="form-url">Enlace de la convocatoria</label>
+          <input type="url" class="form-group__input" id="form-url" placeholder="https://...">
+        </div>
+        <div class="form-group">
+          <label class="form-group__label" for="form-source">Fuente</label>
+          <select class="form-group__select" id="form-source">
+            <option value="Manual">Manual</option>
+            <option value="LinkedIn">LinkedIn</option>
+            <option value="CompuTrabajo">CompuTrabajo</option>
+            <option value="Bumeran">Bumeran</option>
+            <option value="Indeed">Indeed</option>
+            <option value="Web Empresa">Web de la Empresa</option>
+            <option value="Referencia">Referencia</option>
+            <option value="Universidad">Universidad</option>
+            <option value="Otro">Otro</option>
+          </select>
+        </div>
+        <div class="modal__actions">
+          <button type="button" class="btn btn--ghost" onclick="closeModal()">Cancelar</button>
+          <button type="submit" class="btn btn--primary" id="modal-submit-btn">💾 Guardar Vacante</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Skills Editor Modal -->
+  <div class="modal-overlay" id="skills-modal-overlay">
+    <div class="modal">
+      <button class="modal__close" onclick="closeSkillsModal()">✕</button>
+      <h2 class="modal__title">🎯 Editar Mis Habilidades</h2>
+      <p style="color: var(--text-secondary); margin-bottom: 16px; font-size: 0.9rem;">
+        Estas son las habilidades que se usan para buscar vacantes y calcular el % de coincidencia.
+      </p>
+      <div class="form-group">
+        <label class="form-group__label">Mis habilidades técnicas</label>
+        <textarea class="form-group__textarea" id="skills-editor-input" placeholder="SQL, Python, Excel, Power BI, JavaScript, HTML, CSS..." style="min-height: 140px;"></textarea>
+        <span class="form-group__help">Separa cada habilidad con una coma. Las vacantes se buscan automáticamente usando estas skills.</span>
+      </div>
+      <div class="modal__actions">
+        <button class="btn btn--ghost" onclick="closeSkillsModal()">Cancelar</button>
+        <button class="btn btn--success" onclick="saveSkills()">✅ Guardar Habilidades</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Confirm Dialog -->
+  <div class="confirm-overlay" id="confirm-overlay">
+    <div class="confirm-box">
+      <div class="confirm-box__icon" id="confirm-icon">⚠️</div>
+      <div class="confirm-box__title" id="confirm-title">¿Estás seguro?</div>
+      <div class="confirm-box__message" id="confirm-message">Esta acción no se puede deshacer.</div>
+      <div class="confirm-box__actions">
+        <button class="btn btn--ghost" onclick="closeConfirm()">Cancelar</button>
+        <button class="btn btn--danger" id="confirm-action-btn" onclick="executeConfirmAction()">Confirmar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Container -->
+  <div class="toast-container" id="toast-container"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
