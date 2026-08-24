@@ -8,10 +8,13 @@ Esta aplicación no solo te permite guardar de forma manual las empresas a las q
 
 ## 🚀 Características Principales
 
-1. **Búsqueda Automática Dual**: 
-   - Busca empleos locales en Perú (Híbridos, Remotos o Presenciales).
-   - Busca oportunidades internacionales que sean **estrictamente remotas**.
-2. **Dashboard de Coincidencias**: 
+1. **Agregador Multi-API (7 Fuentes)**: 
+   - Busca en 7 plataformas de empleo simultáneamente (JSearch, LinkedIn, Google Jobs, Indeed, Apijob, Active Jobs DB y JOBS SEARCH API) usando una sola `RAPIDAPI_KEY`.
+2. **Gestor de Cuotas Inteligente**: 
+   - Protege los límites gratuitos (*Hard Limits*) de tus APIs. Cuenta las peticiones diarias y mensuales, deteniendo el tráfico a las APIs que alcanzan su cuota de seguridad para evitar sobrecargos.
+3. **Búsqueda Automática Dual**: 
+   - Busca empleos locales en Perú (Híbridos, Remotos o Presenciales) y oportunidades internacionales **estrictamente remotas**.
+4. **Dashboard de Coincidencias**: 
    - Analiza la descripción de las vacantes obtenidas y te muestra un "Match Score" (Porcentaje de coincidencia) basado en las habilidades que configures.
 3. **Filtro Avanzado de Experiencia**: 
    - El sistema lee las ofertas con Inteligencia Artificial/Regex y extrae los años de experiencia requeridos para que puedas filtrarlos (ej: "Sin experiencia" o "Min: 1 año").
@@ -26,7 +29,7 @@ Esta aplicación no solo te permite guardar de forma manual las empresas a las q
 
 - **Frontend**: HTML5, CSS3 Puro (Animaciones Glassmorphism) y Vanilla JavaScript.
 - **Backend**: Node.js, Express.js.
-- **Integraciones**: [JSearch API (vía RapidAPI)](https://rapidapi.com/letscrape-6bRBa3QguO5/api/jsearch) para extraer las ofertas de LinkedIn, Glassdoor, Indeed, etc.
+- **Integraciones**: [RapidAPI](https://rapidapi.com/) (JSearch, Apijob, Indeed, Google Jobs, LinkedIn Jobs, etc.).
 
 ---
 
@@ -43,12 +46,13 @@ npm install
 ### 2. Configurar Variables de Entorno (`.env`)
 Debes crear un archivo llamado `.env` en la raíz del proyecto. Este archivo contiene la configuración secreta para que la API funcione.
 
-1. Ve a [RapidAPI JSearch](https://rapidapi.com/letscrape-6bRBa3QguO5/api/jsearch) y regístrate con tu cuenta (el plan Basic es gratuito).
-2. Copia tu `X-RapidAPI-Key`.
-3. Crea tu archivo `.env` guiándote del archivo `.env.example`:
+1. Ve a [RapidAPI](https://rapidapi.com/) y regístrate con tu cuenta.
+2. Suscríbete al plan Basic (gratuito) de las APIs que desees integrar (ej. JSearch, Apijob, Indeed Jobs, etc.).
+3. Copia tu única `X-RapidAPI-Key` (es la misma para todas).
+4. Crea tu archivo `.env` guiándote del archivo `.env.example`:
 
 ```env
-# Tu API Key de RapidAPI (JSearch API)
+# Tu API Key de RapidAPI (Master Key)
 RAPIDAPI_KEY=tu_clave_secreta_aqui
 
 # Puerto del servidor
@@ -75,9 +79,10 @@ Una vez que el servidor esté corriendo, abre tu navegador e ingresa a:
 ## 📂 Estructura del Proyecto
 
 * **`/public`**: Contiene todo el frontend de la app (`index.html`, `style.css`, `app.js`). Aquí se maneja la interfaz de usuario.
-* **`/data`**: Contiene `vacancies.json`, el archivo que funciona como base de datos. Aquí se guardan las habilidades de tu CV y las vacantes.
-* **`server.js`**: El corazón del backend en Express. Se encarga de guardar y leer los datos de `vacancies.json` y de servir la web.
-* **`scraper.js`**: El algoritmo principal de búsqueda. Construye los parámetros de la JSearch API basándose en tu perfil, ejecuta las peticiones e interactúa con los resultados.
+* **`/data`**: Contiene `vacancies.json` (tu base de datos) y `api_usage.json` (registro de uso de tus cuotas de API).
+* **`server.js`**: El corazón del backend en Express. Se encarga de guardar y leer los datos y servir la web.
+* **`quotaManager.js`**: Gestor de cuotas que administra cuántas peticiones se han hecho a cada API en el mes/día actual para protegerte.
+* **`scraper.js`**: El motor principal de búsqueda. Construye los adaptadores para las 7 APIs, distribuye las peticiones respetando los límites e integra los resultados.
 
 ---
 
