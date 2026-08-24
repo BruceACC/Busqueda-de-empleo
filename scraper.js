@@ -1,53 +1,22 @@
-/* ═══════════════════════════════════════════════
-   SCRAPER - Búsqueda automática de vacantes
-   Usa JSearch API (RapidAPI) para buscar empleos
-   reales basándose en las habilidades del usuario
-   ═══════════════════════════════════════════════ */
-
 const axios = require('axios');
+const quotaManager = require('./quotaManager');
 
 // ── Configuración de búsqueda ──
 const SEARCH_CONFIG = {
-  // Prefijos de rol para las búsquedas
-  rolePrefixes: [
-    'practicante',
-    'practicante pre profesional',
-    'junior',
-    'trainee',
-    'intern'
-  ],
-
-  // Términos de área para combinar con skills
-  areaTerms: [
-    'desarrollo software',
-    'tecnología',
-    'datos',
-    'BI',
-    'analítica',
-    'sistemas',
-    'programador',
-    'developer',
-    'QA',
-    'DevOps'
-  ],
-
-  // Ubicación por defecto
+  rolePrefixes: ['practicante', 'junior', 'trainee', 'intern'],
+  areaTerms: ['desarrollo software', 'tecnología', 'datos', 'developer', 'QA'],
   defaultLocation: 'Lima, Peru',
-
-  // Skills clave que generan búsquedas individuales
-  keySkillsForSearch: [
-    'SQL', 'Python', 'Java', 'React', 'Angular',
-    'FastAPI', 'Spring Boot', 'Flutter', 'Node.js', 'Docker'
-  ]
+  keySkillsForSearch: ['SQL', 'Python', 'Java', 'React', 'Angular', 'Node.js']
 };
 
-/**
- * Genera las queries de búsqueda basadas en las skills del usuario
- * @param {string[]} userSkills - Habilidades del usuario
- * @param {string} location - Ubicación de búsqueda
- * @returns {string[]} - Lista de queries únicas
- */
-function generateSearchQueries(userSkills, location = SEARCH_CONFIG.defaultLocation) {
+function generateSearchQueries(userSkills, location = SEARCH_CONFIG.defaultLocation, customQuery = null) {
+  if (customQuery) {
+    return [
+      { query: `${customQuery} en ${location}`, country: 'pe', remote: false },
+      { query: `${customQuery} remote`, country: '', remote: true }
+    ];
+  }
+  
   const queries = [];
   const addQuery = (q, country, remote) => {
     if (!queries.find(x => x.query === q && x.country === country && x.remote === remote)) {
@@ -55,363 +24,311 @@ function generateSearchQueries(userSkills, location = SEARCH_CONFIG.defaultLocat
     }
   };
 
-  // 1. Búsquedas por skill individual (las más importantes del usuario)
   const importantSkills = userSkills.filter(skill =>
-    SEARCH_CONFIG.keySkillsForSearch.some(ks =>
-      ks.toLowerCase() === skill.toLowerCase()
-    )
+    SEARCH_CONFIG.keySkillsForSearch.some(ks => ks.toLowerCase() === skill.toLowerCase())
   );
 
-  for (const skill of importantSkills.slice(0, 5)) {
-    addQuery(`${skill} en ${location}`, 'pe', false);
+  for (const skill of importantSkills.slice(0, 3)) {
     addQuery(`junior ${skill} en ${location}`, 'pe', false);
     addQuery(`junior ${skill} remote`, '', true);
   }
-
-  // 2. Búsquedas por área + rol
-  for (const area of SEARCH_CONFIG.areaTerms.slice(0, 3)) {
-    addQuery(`junior ${area} en ${location}`, 'pe', false);
-    addQuery(`junior ${area} remote`, '', true);
-  }
-
-  // 3. Búsquedas genéricas
-  addQuery(`desarrollador en ${location}`, 'pe', false);
-  addQuery(`junior developer en ${location}`, 'pe', false);
-  addQuery(`junior developer remote`, '', true);
-
+  addQuery(`desarrollador junior en ${location}`, 'pe', false);
   return queries;
 }
 
-/**
- * Busca vacantes usando JSearch API
- * @param {string} query - Query de búsqueda
- * @param {string} apiKey - RapidAPI key
- * @param {number} page - Número de página
- * @returns {Promise<Object[]>} - Lista de vacantes normalizadas
- */
-async function searchJobs(config, apiKey, page = 1) {
-  const { query, country, remote } = config;
-  try {
-    const params = {
-      query: query,
-      page: page.toString(),
-      num_pages: '1',
-      date_posted: 'month' // Solo del último mes
-    };
-    if (country) params.country = country;
-    if (remote) params.remote_jobs_only = 'true';
+// ── Utilidades de Extracción ──
 
-    const response = await axios.get('https://jsearch.p.rapidapi.com/search-v2', {
-      params: params,
-      headers: {
-        'x-rapidapi-key': apiKey,
-        'x-rapidapi-host': 'jsearch.p.rapidapi.com'
-      },
-      timeout: 15000
-    });
-
-    if (!response.data || !response.data.data) {
-      return [];
-    }
-    
-    // /search-v2 returns jobs inside response.data.data.jobs
-    const jobsArray = Array.isArray(response.data.data) 
-      ? response.data.data 
-      : (response.data.data.jobs || []);
-
-    return jobsArray.map(job => normalizeJob(job));
-  } catch (error) {
-    if (error.response) {
-      const status = error.response.status;
-      if (status === 429) {
-        console.warn(`[JSearch] Rate limit alcanzado para query: "${query}"`);
-      } else if (status === 403) {
-        console.error('[JSearch] API Key inválida o sin suscripción');
-      } else {
-        console.error(`[JSearch] Error ${status} para query: "${query}"`);
-      }
-    } else {
-      console.error(`[JSearch] Error de conexión: ${error.message}`);
-    }
-    return [];
-  }
+function cleanDescription(desc) {
+  if (!desc) return '';
+  let clean = desc.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+  if (clean.length > 400) clean = clean.substring(0, 400) + '...';
+  return clean;
 }
 
-/**
- * Normaliza un job de JSearch al formato de nuestra app
- */
-function normalizeJob(job) {
-  return {
-    id: `jsearch_${job.job_id || Date.now() + Math.random().toString(36).substr(2, 9)}`,
-    company: job.employer_name || 'Empresa no especificada',
-    title: job.job_title || 'Puesto no especificado',
-    area: detectArea(job.job_title, job.job_description),
-    description: cleanDescription(job.job_description || ''),
-    skills: extractSkills(job.job_description || '', job.job_title || ''),
-    url: job.job_apply_link || job.job_google_link || '',
-    source: detectSource(job),
-    logo: job.employer_logo || null,
-    location: job.job_city
-      ? `${job.job_city}, ${job.job_country}`
-      : job.job_country || 'No especificada',
-    employmentType: translateEmploymentType(job.job_employment_type),
-    postedDate: job.job_posted_at_datetime_utc || null,
-    status: 'pending',
-    dateAdded: new Date().toISOString().split('T')[0],
-    dateApplied: null,
-    matchScore: 0 // Se calcula después
-  };
-}
-
-/**
- * Detecta el área basándose en el título y descripción
- */
-function detectArea(title = '', description = '') {
-  const text = `${title} ${description}`.toLowerCase();
-
-  const areaMap = [
-    { keywords: ['business intelligence', ' bi ', 'bi ', 'power bi', 'tableau', 'reportería', 'dashboard'], area: 'Business Intelligence' },
-    { keywords: ['data scien', 'machine learning', 'ml ', 'deep learning', 'ciencia de datos'], area: 'Data Science' },
-    { keywords: ['data analy', 'analítica', 'analytics', 'análisis de datos', 'analista de datos'], area: 'Data Analytics' },
-    { keywords: ['frontend', 'front-end', 'front end', 'react', 'angular', 'vue'], area: 'Desarrollo Frontend' },
-    { keywords: ['backend', 'back-end', 'back end', 'api', 'microservicio'], area: 'Desarrollo Backend' },
-    { keywords: ['full stack', 'fullstack', 'full-stack'], area: 'Desarrollo Full Stack' },
-    { keywords: ['qa', 'quality', 'testing', 'pruebas', 'automatización de pruebas', 'selenium'], area: 'QA / Testing' },
-    { keywords: ['devops', 'cloud', 'aws', 'azure', 'docker', 'kubernetes', 'ci/cd'], area: 'DevOps / Cloud' },
-    { keywords: ['ciberseguridad', 'seguridad', 'security', 'soc', 'pentesting'], area: 'Ciberseguridad' },
-    { keywords: ['ux', 'ui', 'diseño', 'user experience', 'figma'], area: 'UX / UI' },
-    { keywords: ['producto', 'product manager', 'product owner', 'scrum master'], area: 'Producto Digital' },
-    { keywords: ['soporte', 'helpdesk', 'mesa de ayuda', 'support'], area: 'Soporte Técnico' },
-    { keywords: ['consultoría', 'consulting', 'consultora'], area: 'Consultoría' },
-    { keywords: ['transformación digital', 'automatización', 'rpa', 'innovación'], area: 'Transformación Digital' },
-    { keywords: ['base de datos', 'database', 'dba', 'sql server', 'oracle'], area: 'Base de Datos' },
-    { keywords: ['desarrollo', 'developer', 'programador', 'software', 'ingeniero', 'java', 'python', '.net', 'node'], area: 'Desarrollo de Software' },
-  ];
-
-  for (const { keywords, area } of areaMap) {
-    if (keywords.some(kw => text.includes(kw))) {
-      return area;
-    }
-  }
-
-  return 'Tecnología / TI';
-}
-
-/**
- * Extrae skills mencionados en la descripción
- */
 function extractSkills(description, title) {
   const text = `${title} ${description}`.toLowerCase();
-
   const skillPatterns = [
-    // Lenguajes de programación
     'python', 'java', 'javascript', 'typescript', 'c#', 'c\\+\\+', 'php', 'ruby',
-    'go', 'golang', 'rust', 'kotlin', 'swift', 'scala', 'r ', 'dart',
-    // Bases de datos
-    'sql', 'mysql', 'postgresql', 'mongodb', 'oracle', 'sql server', 'redis',
-    'dynamodb', 'firebase',
-    // Frontend & Mobile
-    'html', 'css', 'react', 'angular', 'vue', 'next\\.js', 'nextjs',
-    'tailwind', 'bootstrap', 'sass', 'flutter',
-    // Backend
-    'node\\.js', 'nodejs', 'express', 'spring boot', 'spring', 'django', 'flask', 'fastapi',
-    '.net', 'laravel',
-    // Cloud & DevOps
-    'aws', 'azure', 'gcp', 'google cloud', 'docker', 'kubernetes', 'terraform',
-    'jenkins', 'ci/cd', 'linux', 'git',
-    // Data
-    'power bi', 'tableau', 'excel', 'office', 'pandas', 'numpy', 'spark',
-    'hadoop', 'airflow', 'etl',
-    // Metodologías
-    'scrum', 'agile', 'kanban', 'jira',
-    // Otros
-    'rest api', 'graphql', 'microservicios', 'selenium', 'figma',
+    'sql', 'mysql', 'postgresql', 'mongodb', 'oracle',
+    'html', 'css', 'react', 'angular', 'vue', 'next\\.js', 'tailwind',
+    'node\\.js', 'express', 'spring boot', 'django', 'fastapi', '.net',
+    'aws', 'azure', 'gcp', 'docker', 'kubernetes', 'git',
+    'power bi', 'tableau', 'excel', 'pandas', 'scrum', 'agile'
   ];
 
   const found = new Set();
+  const capitalMap = {
+    'python': 'Python', 'java': 'Java', 'javascript': 'JavaScript',
+    'typescript': 'TypeScript', 'c#': 'C#', 'c++': 'C++', 'php': 'PHP',
+    'sql': 'SQL', 'mysql': 'MySQL', 'postgresql': 'PostgreSQL',
+    'mongodb': 'MongoDB', 'html': 'HTML', 'css': 'CSS', 'react': 'React',
+    'angular': 'Angular', 'vue': 'Vue', 'next.js': 'Next.js', 'tailwind': 'Tailwind',
+    'node.js': 'Node.js', 'express': 'Express', 'spring boot': 'Spring Boot',
+    'django': 'Django', 'fastapi': 'FastAPI', '.net': '.NET', 'aws': 'AWS',
+    'azure': 'Azure', 'gcp': 'GCP', 'docker': 'Docker', 'kubernetes': 'Kubernetes',
+    'git': 'Git', 'power bi': 'Power BI', 'tableau': 'Tableau', 'excel': 'Excel',
+    'pandas': 'Pandas', 'scrum': 'Scrum', 'agile': 'Agile'
+  };
 
   for (const pattern of skillPatterns) {
     const regex = new RegExp(`\\b${pattern}\\b`, 'i');
     if (regex.test(text)) {
-      // Normalize skill name
-      let skillName = pattern
-        .replace(/\\\+/g, '+')
-        .replace(/\\\./g, '.')
-        .replace(/\\b/g, '')
-        .trim();
-
-      // Capitalize properly
-      const capitalMap = {
-        'python': 'Python', 'java': 'Java', 'javascript': 'JavaScript',
-        'typescript': 'TypeScript', 'c#': 'C#', 'c++': 'C++', 'php': 'PHP',
-        'ruby': 'Ruby', 'go': 'Go', 'golang': 'Go', 'rust': 'Rust',
-        'kotlin': 'Kotlin', 'swift': 'Swift', 'scala': 'Scala', 'r ': 'R',
-        'dart': 'Dart',
-        'sql': 'SQL', 'mysql': 'MySQL', 'postgresql': 'PostgreSQL',
-        'mongodb': 'MongoDB', 'oracle': 'Oracle', 'sql server': 'SQL Server',
-        'redis': 'Redis', 'dynamodb': 'DynamoDB', 'firebase': 'Firebase',
-        'html': 'HTML', 'css': 'CSS', 'react': 'React', 'angular': 'Angular',
-        'vue': 'Vue', 'next.js': 'Next.js', 'nextjs': 'Next.js',
-        'tailwind': 'Tailwind', 'bootstrap': 'Bootstrap', 'sass': 'Sass',
-        'flutter': 'Flutter',
-        'node.js': 'Node.js', 'nodejs': 'Node.js', 'express': 'Express',
-        'spring boot': 'Spring Boot', 'spring': 'Spring', 'django': 'Django', 'flask': 'Flask',
-        'fastapi': 'FastAPI', '.net': '.NET', 'laravel': 'Laravel',
-        'aws': 'AWS', 'azure': 'Azure', 'gcp': 'GCP',
-        'google cloud': 'Google Cloud', 'docker': 'Docker',
-        'kubernetes': 'Kubernetes', 'terraform': 'Terraform',
-        'jenkins': 'Jenkins', 'ci/cd': 'CI/CD', 'linux': 'Linux', 'git': 'Git',
-        'power bi': 'Power BI', 'tableau': 'Tableau', 'excel': 'Excel',
-        'office': 'Office', 'pandas': 'Pandas', 'numpy': 'NumPy',
-        'spark': 'Spark', 'hadoop': 'Hadoop', 'airflow': 'Airflow', 'etl': 'ETL',
-        'scrum': 'Scrum', 'agile': 'Agile', 'kanban': 'Kanban', 'jira': 'Jira',
-        'rest api': 'REST API', 'graphql': 'GraphQL',
-        'microservicios': 'Microservicios', 'selenium': 'Selenium', 'figma': 'Figma',
-      };
-
+      let skillName = pattern.replace(/\\\+/g, '+').replace(/\\\./g, '.').replace(/\\b/g, '').trim();
       skillName = capitalMap[skillName.toLowerCase()] || skillName;
-      if (skillName && skillName !== 'R') { // Avoid false positives with 'R'
-        found.add(skillName);
-      }
+      if (skillName) found.add(skillName);
     }
   }
-
   return [...found];
 }
 
-/**
- * Calcula el porcentaje de coincidencia con las skills del usuario
- */
+function detectArea(title = '', description = '') {
+  const text = `${title} ${description}`.toLowerCase();
+  if (text.includes('data') || text.includes('analyst') || text.includes('bi ')) return 'Datos / Analítica';
+  if (text.includes('front') || text.includes('react') || text.includes('angular')) return 'Desarrollo Frontend';
+  if (text.includes('back') || text.includes('api') || text.includes('node')) return 'Desarrollo Backend';
+  if (text.includes('qa') || text.includes('test')) return 'QA / Testing';
+  return 'Tecnología / TI';
+}
+
 function calculateMatchScore(jobSkills, userSkills) {
   if (!jobSkills || jobSkills.length === 0) return 0;
-
   const userSkillsLower = userSkills.map(s => s.toLowerCase());
-  const matched = jobSkills.filter(skill =>
-    userSkillsLower.includes(skill.toLowerCase())
-  );
-
+  const matched = jobSkills.filter(skill => userSkillsLower.includes(skill.toLowerCase()));
   return Math.round((matched.length / jobSkills.length) * 100);
 }
 
-/**
- * Limpia la descripción del HTML/texto largo
- */
-function cleanDescription(desc) {
-  if (!desc) return '';
+// ── Adaptadores de APIs ──
 
-  // Remove HTML tags
-  let clean = desc.replace(/<[^>]*>/g, ' ');
-  // Remove multiple spaces
-  clean = clean.replace(/\s+/g, ' ').trim();
-  // Limit length
-  if (clean.length > 500) {
-    clean = clean.substring(0, 500) + '...';
-  }
-  return clean;
-}
-
-/**
- * Detecta la fuente del empleo
- */
-function detectSource(job) {
-  const publisher = (job.job_publisher || '').toLowerCase();
-  if (publisher.includes('linkedin')) return 'LinkedIn';
-  if (publisher.includes('indeed')) return 'Indeed';
-  if (publisher.includes('computrabajo')) return 'CompuTrabajo';
-  if (publisher.includes('bumeran')) return 'Bumeran';
-  if (publisher.includes('glassdoor')) return 'Glassdoor';
-  return job.job_publisher || 'Web';
-}
-
-/**
- * Traduce el tipo de empleo
- */
-function translateEmploymentType(type) {
-  const map = {
-    'FULLTIME': 'Tiempo completo',
-    'PARTTIME': 'Medio tiempo',
-    'CONTRACTOR': 'Contrato',
-    'INTERN': 'Prácticas',
-    'TEMPORARY': 'Temporal'
-  };
-  return map[type] || type || 'No especificado';
-}
-
-/**
- * Búsqueda principal: ejecuta múltiples queries y deduplica resultados
- * @param {string[]} userSkills - Skills del usuario
- * @param {string} apiKey - RapidAPI key
- * @param {string} location - Ubicación
- * @param {string} customQuery - Query personalizado (opcional)
- * @returns {Promise<Object>} - { results, queriesUsed, errors }
- */
-async function searchAllJobs(userSkills, apiKey, location, customQuery = null) {
-  const results = [];
-  const errors = [];
-  let queriesUsed = [];
-
-  if (customQuery) {
-    // Si hay query personalizado, buscar tanto local como remoto
-    queriesUsed = [
-      { query: `${customQuery} en ${location}`, country: 'pe', remote: false },
-      { query: `${customQuery} remote`, country: '', remote: true }
-    ];
-  } else {
-    // Generar queries automáticamente
-    queriesUsed = generateSearchQueries(userSkills, location);
-  }
-
-  console.log(`[Scraper] Ejecutando ${queriesUsed.length} búsquedas...`);
-
-  // Ejecutar búsquedas con delay entre cada una para no exceder rate limits
-  for (let i = 0; i < queriesUsed.length; i++) {
-    const config = queriesUsed[i];
-    console.log(`[Scraper] (${i + 1}/${queriesUsed.length}) Buscando: "${config.query}" (Remoto: ${config.remote})`);
-
-    try {
-      const jobs = await searchJobs(config, apiKey);
-      results.push(...jobs);
-
-      // Delay entre búsquedas (1 segundo)
-      if (i < queriesUsed.length - 1) {
-        await new Promise(resolve => setTimeout(resolve, 1000));
-      }
-    } catch (error) {
-      errors.push({ query: config.query, error: error.message });
+const apiAdapters = [
+  {
+    name: 'JSearch',
+    quotaKey: 'jsearch',
+    queriesPerRun: 2, // Limitamos para conservar cuota
+    async fetch(queryConfig, apiKey) {
+      const params = { query: queryConfig.query, page: '1', num_pages: '1' };
+      if (queryConfig.country) params.country = queryConfig.country;
+      if (queryConfig.remote) params.remote_jobs_only = 'true';
+      
+      const res = await axios.get('https://jsearch.p.rapidapi.com/search-v2', {
+        params, headers: { 'x-rapidapi-key': apiKey, 'x-rapidapi-host': 'jsearch.p.rapidapi.com' }, timeout: 10000
+      });
+      const jobs = Array.isArray(res.data?.data) ? res.data.data : (res.data?.data?.jobs || []);
+      return jobs.map(j => ({
+        id: `jsearch_${j.job_id || Date.now() + Math.random()}`,
+        company: j.employer_name || 'Desconocida',
+        title: j.job_title || 'Sin Título',
+        description: j.job_description || '',
+        url: j.job_apply_link || j.job_google_link || '',
+        location: j.job_city ? `${j.job_city}, ${j.job_country}` : (j.job_country || 'Remoto'),
+        source: 'JSearch / Google Jobs'
+      }));
+    }
+  },
+  {
+    name: 'Apijob',
+    quotaKey: 'apijob',
+    queriesPerRun: 5, // Tiene buen límite diario
+    async fetch(queryConfig, apiKey) {
+      // Usando endpoint simulado genérico para Apijob (Ajustar si el endpoint exacto es diferente)
+      const res = await axios.get('https://apijobs-apijobs-default.p.rapidapi.com/api/apijob-job-searching-api', {
+        params: { q: queryConfig.query, location: queryConfig.country || 'Peru' },
+        headers: { 'x-rapidapi-key': apiKey, 'x-rapidapi-host': 'apijobs-apijobs-default.p.rapidapi.com' }, timeout: 10000
+      });
+      const jobs = res.data?.jobs || [];
+      return jobs.map(j => ({
+        id: `apijob_${j.id || Date.now() + Math.random()}`,
+        company: j.company_name || 'Desconocida',
+        title: j.title || 'Sin Título',
+        description: j.description || '',
+        url: j.url || '',
+        location: j.location || 'Desconocida',
+        source: 'Apijob'
+      }));
+    }
+  },
+  {
+    name: 'Active Jobs DB',
+    quotaKey: 'active-jobs-db',
+    queriesPerRun: 1, // Límite estricto de 25/mes
+    async fetch(queryConfig, apiKey) {
+      const res = await axios.get('https://active-jobs-db.p.rapidapi.com/active-ats', {
+        params: { title: queryConfig.query, location: queryConfig.country || 'Peru', limit: 10 },
+        headers: { 'x-rapidapi-key': apiKey, 'x-rapidapi-host': 'active-jobs-db.p.rapidapi.com' }, timeout: 10000
+      });
+      const jobs = res.data?.data || [];
+      return jobs.map(j => ({
+        id: `active_${j.id || Date.now() + Math.random()}`,
+        company: j.company || 'Desconocida',
+        title: j.title || 'Sin Título',
+        description: j.description || '',
+        url: j.url || '',
+        location: j.location || 'Desconocida',
+        source: 'Active Jobs DB'
+      }));
+    }
+  },
+  // Añadir placeholders funcionales para el resto, que retornan [] si fallan
+  {
+    name: 'LinkedIn Jobs',
+    quotaKey: 'linkedin-jobs',
+    queriesPerRun: 1,
+    async fetch(queryConfig, apiKey) {
+      const res = await axios.get('https://linkedin-job-search-api.p.rapidapi.com/search-jobs-v2', {
+        params: { keywords: queryConfig.query, location: queryConfig.country || 'Peru' },
+        headers: { 'x-rapidapi-key': apiKey, 'x-rapidapi-host': 'linkedin-job-search-api.p.rapidapi.com' }, timeout: 10000
+      });
+      return (res.data?.data || []).map(j => ({
+        id: `li_${Date.now() + Math.random()}`,
+        company: j.company || 'Desconocida', title: j.title || 'Sin Título',
+        description: j.description || '', url: j.url || '', location: j.location || 'Remoto', source: 'LinkedIn'
+      }));
+    }
+  },
+  {
+    name: 'Google Jobs API',
+    quotaKey: 'google-jobs',
+    queriesPerRun: 1,
+    async fetch(queryConfig, apiKey) {
+      const res = await axios.get('https://google-jobs-api.p.rapidapi.com/search', {
+        params: { query: queryConfig.query },
+        headers: { 'x-rapidapi-key': apiKey, 'x-rapidapi-host': 'google-jobs-api.p.rapidapi.com' }, timeout: 10000
+      });
+      return (res.data?.jobs || []).map(j => ({
+        id: `gj_${Date.now() + Math.random()}`,
+        company: j.company_name || 'Desconocida', title: j.title || 'Sin Título',
+        description: j.description || '', url: j.url || '', location: j.location || 'Remoto', source: 'Google Jobs'
+      }));
+    }
+  },
+  {
+    name: 'Indeed Jobs API',
+    quotaKey: 'indeed-jobs',
+    queriesPerRun: 1,
+    async fetch(queryConfig, apiKey) {
+      const res = await axios.get('https://indeed-jobs-api.p.rapidapi.com/search', {
+        params: { q: queryConfig.query, l: queryConfig.country || 'Peru' },
+        headers: { 'x-rapidapi-key': apiKey, 'x-rapidapi-host': 'indeed-jobs-api.p.rapidapi.com' }, timeout: 10000
+      });
+      return (res.data?.jobs || []).map(j => ({
+        id: `ind_${Date.now() + Math.random()}`,
+        company: j.company || 'Desconocida', title: j.title || 'Sin Título',
+        description: j.description || '', url: j.url || '', location: j.location || 'Remoto', source: 'Indeed'
+      }));
+    }
+  },
+  {
+    name: 'JOBS SEARCH API',
+    quotaKey: 'jobs-search-api',
+    queriesPerRun: 1,
+    async fetch(queryConfig, apiKey) {
+      const res = await axios.get('https://jobs-search-api.p.rapidapi.com/search', {
+        params: { query: queryConfig.query },
+        headers: { 'x-rapidapi-key': apiKey, 'x-rapidapi-host': 'jobs-search-api.p.rapidapi.com' }, timeout: 10000
+      });
+      return (res.data?.data || []).map(j => ({
+        id: `jsapi_${Date.now() + Math.random()}`,
+        company: j.company || 'Desconocida', title: j.title || 'Sin Título',
+        description: j.description || '', url: j.url || '', location: j.location || 'Remoto', source: 'Jobs Search API'
+      }));
     }
   }
+];
 
-  // Deduplicar por título + empresa
+// ── Búsqueda Principal ──
+
+async function searchAllJobs(userSkills, apiKey, location, customQuery = null) {
+  const allQueries = generateSearchQueries(userSkills, location, customQuery);
+  console.log(`[Scraper] Se generaron ${allQueries.length} queries base.`);
+
+  const results = [];
+  const errors = [];
+  const stats = {};
+
+  // Ejecutamos adaptadores en paralelo
+  const fetchPromises = apiAdapters.map(async (adapter) => {
+    stats[adapter.name] = { attempted: 0, successful: 0, itemsFound: 0 };
+    
+    // Solo tomamos la cantidad de queries que esta API permite por ejecución para no agotar cuotas
+    const queriesForAdapter = allQueries.slice(0, adapter.queriesPerRun);
+
+    for (const query of queriesForAdapter) {
+      if (!quotaManager.canUse(adapter.quotaKey)) {
+        console.log(`[Scraper] ⚠️ Omitiendo ${adapter.name} por límite de cuota de seguridad.`);
+        break; // Límite alcanzado, salir del loop para esta API
+      }
+
+      stats[adapter.name].attempted++;
+      try {
+        console.log(`[Scraper] -> ${adapter.name}: Buscando "${query.query}"...`);
+        
+        // Petición real
+        const jobs = await adapter.fetch(query, apiKey);
+        
+        // Descontar cuota
+        quotaManager.increment(adapter.quotaKey, 1);
+        
+        stats[adapter.name].successful++;
+        
+        // Normalización final
+        for (const j of jobs) {
+          if (!j.title) continue;
+          j.area = detectArea(j.title, j.description);
+          j.skills = extractSkills(j.description, j.title);
+          j.description = cleanDescription(j.description);
+          j.matchScore = calculateMatchScore(j.skills, userSkills);
+          j.status = 'pending';
+          j.dateAdded = new Date().toISOString().split('T')[0];
+          results.push(j);
+          stats[adapter.name].itemsFound++;
+        }
+      } catch (error) {
+        let errMsg = error.message;
+        if (error.response) errMsg = `${error.response.status} - ${error.response.statusText}`;
+        console.error(`[Scraper] ❌ Error en ${adapter.name}: ${errMsg}`);
+        errors.push({ api: adapter.name, query: query.query, error: errMsg });
+        
+        // Si hay Rate Limit 429, pausamos esta API en este ciclo
+        if (error.response && error.response.status === 429) {
+          console.warn(`[Scraper] ⏸️ Rate limit (429) en ${adapter.name}. Deteniendo peticiones para esta API.`);
+          break; 
+        }
+      }
+      
+      // Pequeño delay entre queries de la misma API para respetar rate limits internos
+      await new Promise(r => setTimeout(r, 1000));
+    }
+  });
+
+  await Promise.allSettled(fetchPromises);
+
+  // Deduplicación global
   const seen = new Map();
   const unique = [];
-
   for (const job of results) {
-    const key = `${job.company.toLowerCase()}_${job.title.toLowerCase()}`;
+    const key = `${job.company.toLowerCase().trim()}_${job.title.toLowerCase().trim()}`;
     if (!seen.has(key)) {
       seen.set(key, true);
-      // Calcular match score
-      job.matchScore = calculateMatchScore(job.skills, userSkills);
       unique.push(job);
     }
   }
 
-  // Ordenar por match score (mayor primero)
   unique.sort((a, b) => b.matchScore - a.matchScore);
-
-  console.log(`[Scraper] Encontradas ${unique.length} vacantes únicas de ${results.length} resultados totales`);
+  
+  console.log(`[Scraper] ✨ Búsqueda completada. Total combinados: ${results.length}. Únicos: ${unique.length}`);
+  console.log('[Scraper] Estadísticas por API:', stats);
 
   return {
     results: unique,
-    queriesUsed: queriesUsed.map(q => q.query),
+    queriesUsed: allQueries.map(q => q.query),
     totalRaw: results.length,
     totalUnique: unique.length,
+    stats,
     errors
   };
 }
 
 module.exports = {
   searchAllJobs,
-  searchJobs,
   generateSearchQueries,
   calculateMatchScore,
   extractSkills,

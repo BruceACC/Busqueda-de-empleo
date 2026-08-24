@@ -8,6 +8,7 @@ const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
 const { searchAllJobs, calculateMatchScore, extractSkills, detectArea } = require('./scraper');
+const quotaManager = require('./quotaManager');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -66,6 +67,19 @@ app.get('/api/status', (req, res) => {
     apiKeyConfigured: hasApiKey,
     serverTime: new Date().toISOString()
   });
+});
+
+/**
+ * GET /api/quotas
+ * Retorna el estado actual de los límites de las APIs de RapidAPI
+ */
+app.get('/api/quotas', (req, res) => {
+  try {
+    const status = quotaManager.getStatus();
+    res.json({ ok: true, quotas: status });
+  } catch (error) {
+    res.status(500).json({ ok: false, error: error.message });
+  }
 });
 
 /**
@@ -327,6 +341,7 @@ app.post('/api/search', async (req, res) => {
         queriesUsed: searchResult.queriesUsed,
         totalRaw: searchResult.totalRaw,
         totalUnique: searchResult.totalUnique,
+        stats: searchResult.stats,
         errors: searchResult.errors,
         searchedAt: new Date().toISOString()
       }

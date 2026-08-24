@@ -115,7 +115,12 @@
         <button class="filter-btn filter-btn--red" data-filter="applied" onclick="setFilter('applied', this)">🔴 Postulado</button>
       </div>
 
-      <div class="experience-filter" style="display: flex; gap: 8px; align-items: center; margin-left: auto;">
+      <div class="filters-container" style="display: flex; gap: 8px; align-items: center; margin-left: auto; flex-wrap: wrap;">
+        <select id="location-filter" onchange="applyLocationFilter()" class="form-group__select" style="width: 150px; padding: 6px 12px; height: 36px;">
+          <option value="all">Ubicación: Todas</option>
+          <option value="peru">Perú</option>
+          <option value="foreign">Extranjero</option>
+        </select>
         <select id="exp-select" onchange="toggleExpRange()" class="form-group__select" style="width: 150px; padding: 6px 12px; height: 36px;">
           <option value="all">Experiencia: Todas</option>
           <option value="none">Sin Experiencia (Trainee)</option>

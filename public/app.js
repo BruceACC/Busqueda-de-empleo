@@ -14,6 +14,7 @@ let currentSkillFilter = null;
 let currentExpFilter = 'all';
 let currentExpMin = null;
 let currentExpMax = null;
+let currentLocationFilter = 'all';
 let confirmAction = null;
 let isSearching = false;
 let apiKeyConfigured = false;
@@ -409,6 +410,13 @@ function getFilteredVacancies() {
       if (!searchable.includes(query)) return false;
     }
 
+    // Filtro de Ubicación
+    if (currentLocationFilter !== 'all') {
+      const isPeru = isPeruLocation(v.location);
+      if (currentLocationFilter === 'peru' && !isPeru) return false;
+      if (currentLocationFilter === 'foreign' && isPeru) return false;
+    }
+
     // Filtro de Experiencia
     if (currentExpFilter !== 'all') {
       const textToSearch = ((v.title || '') + ' ' + (v.description || '')).toLowerCase();
@@ -445,6 +453,18 @@ function toggleSkillFilter(skill) {
   currentSkillFilter = currentSkillFilter === skill ? null : skill;
   renderSkillsFilterBar();
   renderVacancies();
+}
+
+function applyLocationFilter() {
+  currentLocationFilter = document.getElementById('location-filter').value;
+  renderVacancies();
+}
+
+function isPeruLocation(location) {
+  if (!location) return false;
+  const loc = location.toLowerCase();
+  const peruKeywords = ['peru', 'perú', ', pe', 'lima', 'arequipa', 'cusco', 'piura', 'trujillo', 'chiclayo', 'callao', 'huancayo', 'iquitos'];
+  return peruKeywords.some(keyword => loc.includes(keyword));
 }
 
 function toggleExpRange() {
