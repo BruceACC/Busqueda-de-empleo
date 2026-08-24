@@ -16,11 +16,11 @@ Esta aplicación no solo te permite guardar de forma manual las empresas a las q
    - Busca empleos locales en Perú (Híbridos, Remotos o Presenciales) y oportunidades internacionales **estrictamente remotas**.
 4. **Dashboard de Coincidencias**: 
    - Analiza la descripción de las vacantes obtenidas y te muestra un "Match Score" (Porcentaje de coincidencia) basado en las habilidades que configures.
-3. **Filtro Avanzado de Experiencia**: 
+5. **Filtro Avanzado de Experiencia**: 
    - El sistema lee las ofertas con Inteligencia Artificial/Regex y extrae los años de experiencia requeridos para que puedas filtrarlos (ej: "Sin experiencia" o "Min: 1 año").
-4. **Base de Datos en JSON Local**: 
+6. **Base de Datos en JSON Local**: 
    - No necesitas instalar MySQL o MongoDB. Todo se guarda de forma segura en un archivo local (`vacancies.json`), manteniendo tu información privada.
-5. **Gestor de Estados**:
+7. **Gestor de Estados**:
    - Organiza tus oportunidades en estados ("Pendiente", "Postulado") para hacer un seguimiento real de tus procesos de selección.
 
 ---
