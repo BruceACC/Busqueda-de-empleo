@@ -7,8 +7,10 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
-const { searchAllJobs, calculateMatchScore, extractSkills, detectArea } = require('./scraper');
+const { searchAllJobs, calculateMatchScore, extractSkills, detectArea, detectExperience } = require('./scraper');
 const quotaManager = require('./quotaManager');
+const ollamaService = require('./ollamaService');
+const webScraper = require('./webScraper');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -230,6 +232,8 @@ app.post('/api/vacancies/manual', (req, res) => {
   try {
     const data = readData();
     const body = req.body;
+    
+    const sen = detectSeniority(body.title || '', body.description || '');
 
     const vacancy = {
       id: 'manual_' + Date.now(),
@@ -238,6 +242,9 @@ app.post('/api/vacancies/manual', (req, res) => {
       area: body.area || 'Tecnología / TI',
       description: body.description || '',
       skills: body.skills || [],
+      experience: body.experience || 'No especificada',
+      seniority: sen.name,
+      seniorityLevel: sen.level,
       url: body.url || '',
       source: body.source || 'Manual',
       logo: null,
@@ -295,6 +302,71 @@ app.put('/api/skills', (req, res) => {
     writeData(data);
     res.json({ ok: true, skills: data.mySkills });
   } catch (error) {
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+/**
+ * POST /api/vacancies/:id/ai-verify
+ * Verifica una vacante usando Web Scraping y Ollama Local
+ */
+app.post('/api/vacancies/:id/ai-verify', async (req, res) => {
+  try {
+    const data = readData();
+    const { id } = req.params;
+    
+    const vacancy = data.vacancies.find(v => v.id === id);
+    if (!vacancy) {
+      return res.status(404).json({ ok: false, error: 'Vacancy not found' });
+    }
+
+    let textToAnalyze = vacancy.description;
+
+    // Si tiene URL, usamos Puppeteer para sacar el texto profundo
+    if (vacancy.url) {
+      const fullText = await webScraper.fetchFullDescription(vacancy.url);
+      if (fullText && fullText.length > 50) {
+        textToAnalyze = fullText;
+      }
+    }
+
+    // Pasamos el texto a Ollama
+    const aiData = await ollamaService.analyzeJobDescriptionWithAI(textToAnalyze);
+
+    if (aiData) {
+      // Actualizamos la vacante con los datos súper precisos de la IA
+      if (aiData.skills && Array.isArray(aiData.skills)) {
+        vacancy.skills = aiData.skills;
+      }
+      if (aiData.experience) {
+        vacancy.experience = aiData.experience;
+      }
+      if (aiData.area) {
+        vacancy.area = aiData.area;
+      }
+      if (aiData.seniority) {
+        vacancy.seniority = aiData.seniority;
+      }
+      if (aiData.seniorityLevel !== undefined) {
+        vacancy.seniorityLevel = aiData.seniorityLevel;
+      }
+      // Actualizamos el score de match con las nuevas skills
+      vacancy.matchScore = calculateMatchScore(vacancy.skills, data.mySkills);
+      
+      // Añadimos una marca de que fue verificada por IA
+      vacancy.aiVerified = true;
+      if (aiData.salary) {
+        vacancy.salary = aiData.salary;
+      }
+
+      writeData(data);
+      return res.json({ ok: true, vacancy, aiData });
+    } else {
+      return res.status(500).json({ ok: false, error: 'Ollama failed to return valid JSON' });
+    }
+
+  } catch (error) {
+    console.error('[AI Verify Error]', error);
     res.status(500).json({ ok: false, error: error.message });
   }
 });

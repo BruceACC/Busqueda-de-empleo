@@ -121,9 +121,18 @@
           <option value="peru">Perú</option>
           <option value="foreign">Extranjero</option>
         </select>
+        <select id="seniority-select" onchange="applySeniorityFilter()" class="form-group__select" style="width: 160px; padding: 6px 12px; height: 36px;">
+          <option value="all">Nivel: Todos</option>
+          <option value="0">Practicante / Intern</option>
+          <option value="1">Trainee</option>
+          <option value="2">Junior</option>
+          <option value="3">Semi-Senior</option>
+          <option value="4">Senior</option>
+          <option value="5">Gerente / Lead</option>
+        </select>
         <select id="exp-select" onchange="toggleExpRange()" class="form-group__select" style="width: 150px; padding: 6px 12px; height: 36px;">
           <option value="all">Experiencia: Todas</option>
-          <option value="none">Sin Experiencia (Trainee)</option>
+          <option value="none">Sin Experiencia (0 años)</option>
           <option value="some">Con Experiencia</option>
         </select>
         <div id="exp-range-container" style="display: none; align-items: center; gap: 5px;">

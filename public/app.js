@@ -15,6 +15,7 @@ let currentExpFilter = 'all';
 let currentExpMin = null;
 let currentExpMax = null;
 let currentLocationFilter = 'all';
+let currentSeniorityFilter = 'all';
 let confirmAction = null;
 let isSearching = false;
 let apiKeyConfigured = false;
@@ -326,6 +327,15 @@ function renderCard(v, index) {
     expBadge = `<span class="vacancy-card__type" style="background: #fff3e0; color: #e65100; border: 1px solid #e65100;">💼 ${expText}</span>`;
   }
 
+  // Seniority badge
+  let senBadge = '';
+  if (v.seniorityLevel >= 0) {
+    let colors = ['#e3f2fd', '#bbdefb', '#90caf9', '#64b5f6', '#42a5f5', '#2196f3'];
+    let textColors = ['#0d47a1', '#0d47a1', '#0d47a1', '#fff', '#fff', '#fff'];
+    let lvl = Math.min(Math.max(v.seniorityLevel, 0), 5);
+    senBadge = `<span class="vacancy-card__type" style="background: ${colors[lvl]}; color: ${textColors[lvl]}; border: 1px solid ${textColors[lvl]};">🎓 ${escapeHtml(v.seniority)}</span>`;
+  }
+
   // Date
   const dateDisplay = isPending
     ? `📅 ${formatDate(v.dateAdded)}`
@@ -340,6 +350,7 @@ function renderCard(v, index) {
         <span class="vacancy-card__area">📂 ${escapeHtml(v.area || 'General')}</span>
         ${locationHtml}
         ${typeHtml}
+        ${senBadge}
         ${expBadge}
       </div>
       ${matchBar}
@@ -349,6 +360,7 @@ function renderCard(v, index) {
         <span class="vacancy-card__date">${dateDisplay}</span>
         <div class="vacancy-card__actions">
           <span class="vacancy-card__source">${escapeHtml(v.source || 'Web')}</span>
+          ${v.aiVerified ? '<span style="color: #6a1b9a; font-size: 0.8rem; border: 1px solid #6a1b9a; padding: 2px 6px; border-radius: 4px; display: inline-flex; align-items: center; gap: 4px;">✨ Verificado por IA</span>' : `<button class="btn btn--sm" style="background: #e1bee7; color: #4a148c; border: 1px solid #ab47bc;" onclick="aiVerifyVacancy('${v.id}')" id="btn-ai-${v.id}">🤖 Analizar con IA</button>`}
           ${urlLink}
           ${actionBtn}
           <button class="btn btn--ghost btn--sm" onclick="confirmDelete('${v.id}')">🗑️</button>
@@ -417,6 +429,13 @@ function getFilteredVacancies() {
       if (currentLocationFilter === 'foreign' && isPeru) return false;
     }
 
+    // Filtro de Seniority
+    if (currentSeniorityFilter !== 'all') {
+      if (v.seniorityLevel === undefined || v.seniorityLevel.toString() !== currentSeniorityFilter) {
+        return false;
+      }
+    }
+
     // Filtro de Experiencia
     if (currentExpFilter !== 'all') {
       const textToSearch = ((v.title || '') + ' ' + (v.description || '')).toLowerCase();
@@ -457,6 +476,11 @@ function toggleSkillFilter(skill) {
 
 function applyLocationFilter() {
   currentLocationFilter = document.getElementById('location-filter').value;
+  renderVacancies();
+}
+
+function applySeniorityFilter() {
+  currentSeniorityFilter = document.getElementById('seniority-select').value;
   renderVacancies();
 }
 
@@ -575,6 +599,46 @@ async function deleteVacancy(id) {
     }
   } catch (error) {
     showToast('❌ Error eliminando vacante', 'error');
+  }
+}
+
+async function aiVerifyVacancy(id) {
+  const btn = document.getElementById(`btn-ai-${id}`);
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '⏳ Analizando con IA...';
+  }
+  showToast('🤖 Extrayendo datos reales con Ollama... (puede tomar unos segundos)', 'info');
+
+  try {
+    const res = await fetch(`${API_BASE}/api/vacancies/${id}/ai-verify`, { method: 'POST' });
+    const data = await res.json();
+    
+    if (data.ok) {
+      // Actualizamos los datos en memoria
+      const index = vacancies.findIndex(v => v.id === id);
+      if (index !== -1) {
+        vacancies[index] = data.vacancy;
+      }
+      renderAll();
+      showToast('✨ ¡Vacante verificada! Datos extraídos con precisión', 'success');
+      
+      // Mostrar al usuario lo que la IA encontró
+      const aiData = data.aiData;
+      console.log('Resultados de IA:', aiData);
+    } else {
+      showToast('❌ Error al analizar: ' + (data.error || 'Desconocido'), 'error');
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = '🤖 Analizar con IA';
+      }
+    }
+  } catch (error) {
+    showToast('❌ Error al comunicarse con el servidor', 'error');
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = '🤖 Analizar con IA';
+    }
   }
 }
 

@@ -6,13 +6,36 @@ const DATA_FILE = path.join(__dirname, 'data', 'api_usage.json');
 // Configuración de límites (Hard Limits) basados en el plan "Basic" ($0)
 // Ajustamos el "safeLimit" al 95% del Hard Limit (o restamos 1-2) para evitar pasarnos.
 const API_LIMITS = {
-  'active-jobs-db': { hardLimit: 25, safeLimit: 23, period: 'month' },
-  'linkedin-jobs': { hardLimit: 25, safeLimit: 23, period: 'month' },
-  'google-jobs': { hardLimit: 100, safeLimit: 95, period: 'month' },
-  'indeed-jobs': { hardLimit: 20, safeLimit: 18, period: 'month' },
-  'jobs-search-api': { hardLimit: 100, safeLimit: 95, period: 'month' },
-  'apijob': { hardLimit: 100, safeLimit: 95, period: 'day' }, // 100 per day
-  'jsearch': { hardLimit: 200, safeLimit: 190, period: 'month' }
+  // ── APIs Existentes ──
+  'jsearch':          { hardLimit: 200,   safeLimit: 190,   period: 'month' },
+  'active-jobs-db':   { hardLimit: 25,    safeLimit: 23,    period: 'month' },
+  'linkedin-jobs':    { hardLimit: 25,    safeLimit: 23,    period: 'month' },
+  'google-jobs':      { hardLimit: 100,   safeLimit: 95,    period: 'month' },
+  'indeed-jobs':      { hardLimit: 20,    safeLimit: 18,    period: 'month' },
+  'jobs-search-api':  { hardLimit: 100,   safeLimit: 95,    period: 'month' },
+  'apijob':           { hardLimit: 100,   safeLimit: 95,    period: 'day' },
+  
+  // ── NUEVAS APIs de Búsqueda de Empleo ──
+  'jobicy':                { hardLimit: 500000, safeLimit: 100,  period: 'month' }, // Público, pero limitamos uso
+  'job-postings-techmap':  { hardLimit: 9000,   safeLimit: 100,  period: 'month' }, // 9000/mes pero limitamos
+  'job-listings':          { hardLimit: 200,    safeLimit: 190,  period: 'month' },
+  'internships-api':       { hardLimit: 200,    safeLimit: 190,  period: 'month' },
+  'glassdoor-realtime':    { hardLimit: 200,    safeLimit: 190,  period: 'month' },
+  'jobs-api-200':          { hardLimit: 200,    safeLimit: 190,  period: 'month' },
+  'bytebricks':            { hardLimit: 100,    safeLimit: 95,   period: 'month' },
+  'upwork-jobs':           { hardLimit: 100,    safeLimit: 95,   period: 'day' },
+  'indeed-daily':          { hardLimit: 10,     safeLimit: 9,    period: 'day' },   // La de 10 al día
+  'indeed-denmark':        { hardLimit: 25,     safeLimit: 23,   period: 'month' },
+  'indeed-finland':        { hardLimit: 25,     safeLimit: 23,   period: 'month' },
+  'indeed-sweden':         { hardLimit: 25,     safeLimit: 23,   period: 'month' },
+  'job-search-50':         { hardLimit: 50,     safeLimit: 47,   period: 'month' },
+  'hirebase':              { hardLimit: 50,     safeLimit: 47,   period: 'month' },
+  'remoote-job-search':    { hardLimit: 50,     safeLimit: 47,   period: 'month' },
+  'jobs-api-50':           { hardLimit: 50,     safeLimit: 47,   period: 'month' },
+  'remote-jobs':           { hardLimit: 20,     safeLimit: 18,   period: 'month' },
+  'monster-jobs':          { hardLimit: 25,     safeLimit: 23,   period: 'month' },
+  'glassdoor-scraper':     { hardLimit: 25,     safeLimit: 23,   period: 'month' },
+  'google-jobs-scraper':   { hardLimit: 25,     safeLimit: 23,   period: 'month' },
 };
 
 class QuotaManager {
